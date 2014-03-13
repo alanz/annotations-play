@@ -24,7 +24,7 @@ import Control.Monad.State.Strict
 import Annotations.Bounds
 import Annotations.BoundsParser as BP
 import Annotations.Except
-import Annotations.MultiRec.Annotated -- hiding (AnyAnnFix,AnnFix,AnnFix1) -- TODO: restore these
+import Annotations.MultiRec.Annotated
 import Annotations.MultiRec.Any
 import Annotations.MultiRec.ParserCombinators
 import Annotations.MultiRec.Yield
@@ -287,8 +287,9 @@ distribute p1 _ = do
 -- type YP s φ m = P s (YieldT Bounds φ m)
 
 instance EqS Tuples where
-  -- This is for the type checker only, no need to actualy define eqS
-  -- eqS
+  eqS Expr Expr = Just Refl
+  eqS Type Type = Just Refl
+  eqS _    _    = Nothing
 
 
 data ExprToken = TIntLit Int
@@ -472,9 +473,6 @@ pTuple w pEl f = do
 
 -- -----------
 
-readExpr :: String -> AnnFix Bounds Tuples Expr
--- readExpr str = parse pExpr "src"
-readExpr = undefined
   -- pn
 
 -- pn = runYieldT Tuples
@@ -491,6 +489,7 @@ readExpr = undefined
 --   So s = [(ExprToken, Bounds)]
 --      u = Range
 --      m = (YieldT Bounds Tuples Identity)
+--      a = Expr
 
 -- runYieldT :: fam   a     -> YieldT x      fam    m        a    -> m        (Maybe (AnnFix x      fam    a)
 --              Tuples a    -> YieldT Bounds Tuples Identity a    -> Identity (Maybe (AnnFix Bounds Tuples a) 
@@ -502,7 +501,7 @@ readExpr = undefined
 
 
 g :: Tuples Expr
-g = undefined
+g = Expr
 
 ff = runYield g
 
@@ -510,7 +509,6 @@ ff = runYield g
 --   = Annotations.MultiRec.Yield.YieldT (StateT [AnyAnnFix x fam] m a)
 
 xx :: YieldT Bounds Tuples Identity Expr
-
 xx = undefined
 
 gg :: Maybe (AnnFix Bounds Tuples Expr)
@@ -519,12 +517,12 @@ gg = runIdentity $ runYieldT g xx
 ggg :: Identity (Maybe (AnnFix Bounds Tuples Expr))
 ggg = runYieldT g xx
 
-initState :: P.State [(ExprToken, Bounds)] Range
+initState :: [(ExprToken, Bounds)] -> P.State [(ExprToken, Bounds)] Range
 -- initState = undefined
-initState
+initState toks
   = P.State
-   { P.stateInput = []
-   , P.statePos = initialPos "foo"
+   { P.stateInput = toks
+   , P.statePos = initialPos "src"
    , P.stateUser = (0,0)
    }
 
@@ -533,15 +531,75 @@ hh ::
   -- P.State [(ExprToken, Bounds)] Range
   -- -> 
     YieldT
-       Bounds
-       Tuples
-       Identity
+       Bounds -- annotation
+       Tuples -- fam
+       Identity -- m
        (Consumed
           (YieldT
              Bounds Tuples Identity (Reply [(ExprToken, Bounds)] Range Expr)))
 
-hh = runParsecT pExpr initState
+hh = runParsecT pExpr (initState [])
 
 -- ii = runIdentity $ runYieldT g hh
 
 -- jj = (runParsecT (runYieldT g pExpr) initState)
+
+-- jj ::
+--   YieldT
+--     Bounds
+--     Tuples
+--     Identity
+--     (YieldT
+--        Bounds Tuples Identity (Reply [(ExprToken, Bounds)] Range Expr))
+jj = do
+  x <- runParsecT pExpr (initState [])
+  let x' = case x of
+        Consumed a -> a
+        Empty a -> a
+  --let y = case runYieldT g x' of
+  --         yy -> yy
+           -- Ok a b c -> (a,b,c)
+           -- Error e -> error "parse error"
+
+  -- y <- runIdentity $ runYieldT g x'
+  -- y <- runIdentity $ runYieldT g x'
+  -- y <- runIdentity $ runYieldT x'
+  return x'
+
+-- readExpr :: String -> AnnFix Bounds Tuples Expr
+-- readExpr str = parse pExpr "src"
+-- readExpr :: String -> YieldT Bounds Tuples Identity Expr
+readExpr' :: String -> YieldT Bounds Tuples Identity Expr
+readExpr' str = do
+  -- let toks = []
+  let toks = parseTokens str
+  let toks' = collapse isSpace toks
+
+  x <- runParsecT pExpr (initState toks')
+  x' <- case x of
+         Consumed a -> a
+         Empty a -> a
+  (p',q',r') <- case x' of
+          Ok p q r -> return (p,q,r)
+          Error e -> error $ "parse error:" ++ show e
+  -- x''' <- x''
+  -- x''' <- runYieldT g x''
+  return p'
+
+readExpr'' :: String -> Maybe (AnnFix Bounds Tuples Expr)
+readExpr'' str = runIdentity $ runYieldT g (readExpr' str)
+
+readExpr''' :: String -> AnnFix Bounds Tuples Expr
+readExpr''' str = 
+  case runIdentity $ runYieldT g (readExpr' str) of
+     Nothing -> error "parse failed"
+     Just r -> r
+
+{-
+>let expr1 = readExpr "(1, (2, 3))"
+ >errorCata (mkErrorAlg inferType) Expr expr1
+ OK (TyTup TyInt (TyTup TyInt TyInt))
+-}
+
+expr1 = readExpr''' "(1, (2, 3))"
+ee = errorCata (mkErrorAlg inferType) Expr expr1

@@ -586,11 +586,9 @@ readExpr' str = do
   -- x''' <- runYieldT g x''
   return p'
 
-readExpr'' :: String -> Maybe (AnnFix Bounds Tuples Expr)
-readExpr'' str = runIdentity $ runYieldT g (readExpr' str)
 
-readExpr''' :: String -> AnnFix Bounds Tuples Expr
-readExpr''' str = 
+readExpr :: String -> AnnFix Bounds Tuples Expr
+readExpr str =
   case runIdentity $ runYieldT g (readExpr' str) of
      Nothing -> error "parse failed"
      Just r -> r
@@ -601,5 +599,16 @@ readExpr''' str =
  OK (TyTup TyInt (TyTup TyInt TyInt))
 -}
 
-expr1 = readExpr''' "(1, (2, 3))"
+expr1 = readExpr "(1, (2, 3))"
 ee = errorCata (mkErrorAlg inferType) Expr expr1
+
+{-
+>let expr2 = readExpr "(1 :: (Int, Int), 2 + (3, 4))"
+ >errorCata (mkErrorAlg inferType) Expr expr2
+ Failed
+[("lhs and rhs of :: must have equal types", Bounds {leftMargin = (1, 1), rightMargin = (16, 16)})
+, ("lhs and rhs of + must have equal types"
+-}
+
+expr2 = readExpr "(1 :: (Int, Int), 2 + (3, 4))"
+ee2 = errorCata (mkErrorAlg inferType) Expr expr2

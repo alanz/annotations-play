@@ -10,6 +10,8 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- | Modify ch6 to use an annotation of (Bounds,[ExprToken])
+
 import Generics.MultiRec hiding ( (&), show )
 import Generics.MultiRec.Base
 -- import Generics.MultiRec.Fold
@@ -538,12 +540,11 @@ ggg :: Identity (Maybe (AnnFix Bounds Tuples Expr))
 ggg = runYieldT g xx
 
 initState :: [(ExprToken, Bounds)] -> P.State [(ExprToken, Bounds)] Range
--- initState = undefined
 initState toks
   = P.State
    { P.stateInput = toks
-   , P.statePos = initialPos "src"
-   , P.stateUser = (0,0)
+   , P.statePos   = initialPos "src"
+   , P.stateUser  = (0,0)
    }
 
 
@@ -606,6 +607,8 @@ readExpr' str = do
   -- x''' <- runYieldT g x''
   return p'
 
+
+-- type Annot = Bounds
 
 readExpr :: String -> AnnFix Bounds Tuples Expr
 readExpr str =
@@ -713,3 +716,92 @@ repair p = repairBy p distRange
 moveSelection :: Zipper φ (PF φ) => φ ix -> AnnFix Bounds φ ix -> Nav -> Range -> Maybe Bounds
 moveSelection p tree nav range = focusAnn <$> (selectByRange p range tree >>= nav)
 
+-- -------------------------------------------------------------------1
+
+-- Simplest solution, closes to GHC: convert
+-- (AnnFix Bounds Tuples Expr) to
+-- (AnnFix (Bounds,[ExprToken] Tuples Expr)
+{-
+:i AnnFix
+type AnnFix x s = HFix (K x :*: PF s)
+  	-- Defined in `Annotations.MultiRec.Annotated'
+:i HFix
+data HFix h ix = HIn {hout :: h (HFix h) ix}
+  	-- Defined in `Generics.MultiRec.HFix'
+
+so
+AnnFix Bounds Tuples Expr = HFix (K Bounds :*: PF Tuples) Expr
+-}
+type Annot = (Bounds,[ExprToken])
+
+addToks ::
+     [(ExprToken,Bounds)]
+  -> AnnFix Bounds Tuples Expr -- HFix (K Bounds :*: PF Tuples)
+  -- -> AnnFix Annot  Tuples Expr -- HFix (K Annot :*: PF Tuples)
+  -> AnnFix Bounds  Tuples Expr -- HFix (K Annot :*: PF Tuples)
+addToks btoks fp = addToks' p fp
+  where
+    p = Expr
+
+    addToks' :: HFunctor s (PF s) =>
+        -- Tuples Expr
+        s ix
+     -> AnnFix Bounds s ix -- HFix (K Bounds :*: PF Tuples)
+     -> AnnFix Bounds s ix -- HFix (K Annot :*: PF Tuples)
+    addToks' p fp' = HIn {- $ xform -}
+                 -- $ hmap addToks' p
+                 $ hmap addToks' p
+                 $ xx
+                 $ hout fp'
+
+    xx :: (f :*: g) r ix -> (f :*: g) r ix
+    xx (x :*: y) = (x :*: y)
+
+{-
+addToks btoks fp = HIn r
+  where
+    f1 = hout fp
+    f2 = hmap Expr xform f2
+    r = undefined
+-}
+
+xform :: (K Bounds :*: g) r ix -> (K Annot :*: g) r ix
+xform (b :*: x) = K (unK b,[]) :*: x
+
+{-
+*Main> :i AnnFix
+type AnnFix x s = HFix (K x :*: PF s)
+  	-- Defined in `Annotations.MultiRec.Annotated'
+-}
+
+getToksForBounds :: [(ExprToken,Bounds)] -> Bounds -> [ExprToken]
+getToksForBounds btoks pos = map fst $ filter p btoks
+  where
+    pos' = outerRange pos
+    -- p (_,b) = rangeInBounds pos' b
+    p (_,b) = rangeInRange (outerRange b) pos'
+
+
+parseToks :: String -> [(ExprToken, Bounds)]
+parseToks = collapse isSpace . parseTokens
+
+btoks1 = parseToks "(1, (2, 3))"
+
+b1 = Bounds {leftMargin = (1,1), rightMargin = (2,2)}
+b2 = Bounds {leftMargin = (1,1), rightMargin = (3,4)}
+
+--------------
+
+-- From http://hackage.haskell.org/package/Annotations-0.2/docs/src/Annotations-MultiRec-Annotated.html
+
+-- | Removes all annotations from a recursively annotated fixpoint.
+unannotate' :: HFunctor s (PF s) => s ix -> AnnFix x s ix -> HFix (PF s) ix
+-- unannotate' p = HIn . hmap unannotate p . snd' . hout
+-- unannotate' p fp = (HIn . hmap unannotate p . snd' . hout) fp
+unannotate' p fp = HIn $ hmap unannotate' p $ snd' $ hout fp
+
+fst' :: (f :*: g) r ix -> f r ix
+fst' (x :*: _) = x
+
+snd' :: (f :*: g) r ix -> g r ix
+snd' (_ :*: y) = y

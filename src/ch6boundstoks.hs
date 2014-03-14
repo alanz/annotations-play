@@ -737,21 +737,22 @@ type Annot = (Bounds,[ExprToken])
 addToks ::
      [(ExprToken,Bounds)]
   -> AnnFix Bounds Tuples Expr -- HFix (K Bounds :*: PF Tuples)
-  -- -> AnnFix Annot  Tuples Expr -- HFix (K Annot :*: PF Tuples)
-  -> AnnFix Bounds  Tuples Expr -- HFix (K Annot :*: PF Tuples)
+  -> AnnFix Annot  Tuples Expr -- HFix (K Annot :*: PF Tuples)
+  -- -> AnnFix Bounds  Tuples Expr -- HFix (K Annot :*: PF Tuples)
 addToks btoks fp = addToks' p fp
   where
     p = Expr
 
+    -- Note: p parameter has to be able to vary as we recurse into the family
     addToks' :: HFunctor s (PF s) =>
-        -- Tuples Expr
         s ix
      -> AnnFix Bounds s ix -- HFix (K Bounds :*: PF Tuples)
-     -> AnnFix Bounds s ix -- HFix (K Annot :*: PF Tuples)
+     -> AnnFix Annot  s ix -- HFix (K Annot :*: PF Tuples)
     addToks' p fp' = HIn {- $ xform -}
                  -- $ hmap addToks' p
                  $ hmap addToks' p
-                 $ xx
+                 -- $ xx
+                 $ xform
                  $ hout fp'
 
     xx :: (f :*: g) r ix -> (f :*: g) r ix

@@ -739,8 +739,8 @@ addToks ::
   -> AnnFix Bounds Tuples Expr -- HFix (K Bounds :*: PF Tuples)
   -> AnnFix Annot  Tuples Expr -- HFix (K Annot :*: PF Tuples)
   -- -> AnnFix Bounds  Tuples Expr -- HFix (K Annot :*: PF Tuples)
-addToks btoks fp = addToks' p fp
-  where
+addToks btoks fp =
+  let
     p = Expr
 
     -- Note: p parameter has to be able to vary as we recurse into the family
@@ -758,16 +758,16 @@ addToks btoks fp = addToks' p fp
     xx :: (f :*: g) r ix -> (f :*: g) r ix
     xx (x :*: y) = (x :*: y)
 
-{-
-addToks btoks fp = HIn r
-  where
-    f1 = hout fp
-    f2 = hmap Expr xform f2
-    r = undefined
--}
+    -- Need to add tokens to leaf nodes only.
+    xform :: (K Bounds :*: g) r ix -> (K Annot :*: g) r ix
+    xform (b :*: x) = K (unK b,xtoks) :*: x
+      where
+        xtoks = getToksForBounds btoks (unK b)
+  in
+    addToks' p fp
 
-xform :: (K Bounds :*: g) r ix -> (K Annot :*: g) r ix
-xform (b :*: x) = K (unK b,[]) :*: x
+-- Test with
+-- addToks btoks1 expr1
 
 {-
 *Main> :i AnnFix
@@ -806,3 +806,5 @@ fst' (x :*: _) = x
 
 snd' :: (f :*: g) r ix -> g r ix
 snd' (_ :*: y) = y
+
+
